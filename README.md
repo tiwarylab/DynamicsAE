@@ -1,11 +1,11 @@
 # DynamicsAE
-VAE                        |  Dynamics-AE
+VAE: Imposing a Gaussian   |  Dynamics-AE: Imposing overdamped Langevin dynamics
 :-------------------------:|:-------------------------:
 ![VAE](https://github.com/tiwarylab/DynamicsAE/blob/main/VAE_z_movie.gif?raw=true "VAE")|![Dynamics-AE](https://github.com/tiwarylab/DynamicsAE/blob/main/DynAE_z_movie.gif?raw=true "Dynamics-AE")
 
 DynamicsAE: A deep learning-based framework to uniquely identify an uncorrelated, isometric and meaningful latent representation.
 
-Please read and cite this manuscript when using DynamicsAE: https://arxiv.org/abs/2209.00905. Here is an implementation of DynamicsAE in Pytorch.
+Please read and cite this manuscript when using DynamicsAE: https://arxiv.org/abs/2209.00905. Here is an implementation of DynamicsAE in Pytorch. A demonstrative colab notebook can be found [here](https://github.com/tiwarylab/DynamicsAE/blob/main/DynAE_Demo.ipynb).
 
 ## Data Preparation
 Our implementation now only supports the npy files as the input, and also saves all the results into npy files for further anlyses. Users can refer to the data files in the ```examples``` subdirectory.
