@@ -1,4 +1,6 @@
 # DynamicsAE
+![](https://github.com/tiwarylab/DynamicsAE/blob/main/VAE_z_movie.gif?raw=true "VAE") ![](https://github.com/tiwarylab/DynamicsAE/blob/main/DynAE_z_movie.gif?raw=true "Dynamics-AE")
+
 DynamicsAE: A deep learning-based framework to uniquely identify an uncorrelated, isometric and meaningful latent representation.
 
 Please read and cite this manuscript when using DynamicsAE: https://arxiv.org/abs/2209.00905. Here is an implementation of DynamicsAE in Pytorch.

@@ -81,7 +81,7 @@ def main():
             # Bias factor for resampling
             bias_factor = float(config.get("Model Parameters", "bias_factor"))
 
-            # Prior dynamics (Langevin or Hamiltonian)
+            # Prior dynamics (only support Langevin for now)
             if config.get("Model Parameters", "prior_dynamics") == 'Hamiltonian':
                 prior_dynamics = 'Hamiltonian'
             else:
@@ -117,7 +117,6 @@ def main():
             input_data_path = input_data_path.split(',')
 
             # Load the data
-            # for dihedrals
             input_data_list = [np.load(file_path) for file_path in input_data_path]
             
             input_data_list = [torch.from_numpy(input_data).float().to(default_device)\
@@ -205,9 +204,6 @@ def main():
                                 AE_model = DynamicsAE(encoder_type, decoder_type, prior_dynamics, RC_dim, output_shape,
                                                       data_shape, projection_num, min_dist, bias_factor, device, neuron_num1, neuron_num2)
 
-                                if torch.cuda.device_count() > 1:
-                                    AE_model = MyDataParallel(AE_model)
-
                                 AE_model.to(device)
 
                                 AE_model.train()
@@ -238,9 +234,6 @@ def main():
 
                                 AE_model = VAE(encoder_type, decoder_type, RC_dim, output_shape, data_shape,
                                               device, neuron_num1, neuron_num2)
-
-                                if torch.cuda.device_count() > 1:
-                                    AE_model = MyDataParallel(AE_model)
 
                                 AE_model.to(device)
 
