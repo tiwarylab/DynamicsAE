@@ -168,12 +168,20 @@ class DynamicsAE(nn.Module):
 
         return prior_loss
 
-    def calculate_representation_loss(self, data_inputs0, data_inputs1, target_data0, target_data1, beta=1.0):
+    def calculate_loss(self, data_inputs0, data_inputs1, target_data0, target_data1, beta=1.0):
 
-        # pass through VAE
-        outputs0, z_mean0 = self.forward(data_inputs0)
+        batch_size = data_inputs0.shape[0]
 
-        outputs1, z_mean1 = self.forward(data_inputs1)
+        data_inputs = torch.cat([data_inputs0, data_inputs1], dim=0)
+
+        # pass through AE
+        outputs, z_mean = self.forward(data_inputs)
+
+        outputs0 = outputs[:batch_size]
+        outputs1 = outputs[batch_size:]
+
+        z_mean0 = z_mean[:batch_size]
+        z_mean1 = z_mean[batch_size:]
 
         encoded_moves = z_mean1 - z_mean0
 
@@ -182,24 +190,17 @@ class DynamicsAE(nn.Module):
 
         prior_moves = prior_samples1 - z_mean0.detach()
 
-        regularization_loss = utils.sliced_wasserstein_distance(encoded_moves, prior_moves,
-                                                             self.projection_num, p=2, device=self.device)
-
         # MSE Reconstruction loss is used
         reconstruction_error = torch.sum(torch.square(target_data0 - outputs0).flatten(start_dim=1),
                                          dim=1).mean() + \
                                torch.sum(torch.square(target_data1 - outputs1).flatten(start_dim=1),
                                          dim=1).mean()
 
+        regularization_loss = utils.sliced_wasserstein_distance(encoded_moves, prior_moves,
+                                                                self.projection_num, p=2, device=self.device)
+
         # loss = reconstruction_error + beta*entropy
         loss = reconstruction_error + beta * regularization_loss
-
-        return loss, reconstruction_error.detach(), regularization_loss.detach()
-
-    def calculate_prior_loss(self, data_inputs0, data_inputs1):
-        # pass through VAE
-        _, z_mean0 = self.forward(data_inputs0)
-        _, z_mean1 = self.forward(data_inputs1)
 
         # prior loss
         # detach the encoder from the prior loss
@@ -211,7 +212,7 @@ class DynamicsAE(nn.Module):
 
         prior_loss = prior_loss.mean()
 
-        return prior_loss
+        return loss, reconstruction_error.detach(), regularization_loss.detach(), prior_loss
 
     @torch.no_grad()
     def get_cluster_centers(self, train_input_data, test_input_data, batch_size=128, save_centers=False, log_path=None):
@@ -380,7 +381,9 @@ class DynamicsAE(nn.Module):
         epoch = 0
 
         # generate the optimizer and scheduler
-        optimizer = torch.optim.Adam(chain(self.model_encoder.parameters(), self.model_decoder.parameters()), lr=learning_rate)
+        # small beta and learning rate for the first epoch
+        beta_current = beta / 100
+        optimizer = torch.optim.Adam(chain(self.model_encoder.parameters(), self.model_decoder.parameters()), lr=1e-4)
 
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=lr_scheduler_step_size,
                                                     gamma=lr_scheduler_gamma)
@@ -390,6 +393,17 @@ class DynamicsAE(nn.Module):
         while epoch < max_epochs:
             if epoch > 0:
                 train_permutation, test_permutation = self.resampling(train_past_data0, test_past_data0, batch_size, False, output_path, log_path, index)
+
+                if epoch == 1:
+                    # rest beta and learning rate
+                    beta_current = beta
+
+                    optimizer = torch.optim.Adam(
+                        chain(self.model_encoder.parameters(), self.model_decoder.parameters()), lr=learning_rate)
+
+                    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=lr_scheduler_step_size,
+                                                                gamma=lr_scheduler_gamma)
+                    
             else:
                 train_permutation = torch.randperm((train_past_data0).shape[0]).to(self.device)
                 test_permutation = torch.randperm((test_past_data0).shape[0]).to(self.device)
@@ -406,9 +420,9 @@ class DynamicsAE(nn.Module):
                     train_past_data0, train_past_data1, train_target_data0,
                     train_target_data1, train_indices, self.device)
 
-                loss, reconstruction_error, kl_loss = self.calculate_representation_loss(batch_inputs0, batch_inputs1,
-                                                                                         batch_outputs0, batch_outputs1,
-                                                                                         beta)
+                loss, reconstruction_error, kl_loss, prior_loss = self.calculate_loss(batch_inputs0, batch_inputs1,
+                                                                          batch_outputs0, batch_outputs1,
+                                                                          beta_current)
 
                 # Stop if NaN is obtained
                 if (torch.isnan(loss).any()):
@@ -419,14 +433,6 @@ class DynamicsAE(nn.Module):
                 prior_optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-
-                train_indices = train_permutation[i:i + batch_size]
-
-                batch_inputs0, batch_inputs1, batch_outputs0, batch_outputs1 = utils.sample_pairwise_minibatch(
-                    train_past_data0, train_past_data1, train_target_data0,
-                    train_target_data1, train_indices, self.device)
-
-                prior_loss = self.calculate_prior_loss(batch_inputs0, batch_inputs1)
 
                 # Stop if NaN is obtained
                 if (torch.isnan(prior_loss).any()):
@@ -461,13 +467,10 @@ class DynamicsAE(nn.Module):
                         test_past_data0, test_past_data1, test_target_data0,
                         test_target_data1, test_indices, self.device)
 
-                    loss, reconstruction_error, kl_loss = self.calculate_representation_loss(batch_inputs0,
-                                                                                             batch_inputs1,
-                                                                                             batch_outputs0,
-                                                                                             batch_outputs1,
-                                                                                             beta)
-
-                    prior_loss = self.calculate_prior_loss(batch_inputs0, batch_inputs1)
+                    loss, reconstruction_error, kl_loss, prior_loss = self.calculate_loss(batch_inputs0, batch_inputs1,
+                                                                                          batch_outputs0,
+                                                                                          batch_outputs1,
+                                                                                          beta)
 
                     print(
                         "Loss (test) %f\tRegularization loss (test): %f\n"
@@ -533,10 +536,10 @@ class DynamicsAE(nn.Module):
                 train_past_data0, train_past_data1, train_target_data0,
                 train_target_data1, train_indices, self.device)
 
-            loss1, reconstruction_error1, kl_loss1 = self.calculate_representation_loss(batch_inputs0, batch_inputs1,
-                                                                                     batch_outputs0, batch_outputs1,
-                                                                                     beta)
-            prior_loss1 = self.calculate_prior_loss(batch_inputs0, batch_inputs1)
+            loss1, reconstruction_error1, kl_loss1, prior_loss1 = self.calculate_loss(batch_inputs0, batch_inputs1,
+                                                                                  batch_outputs0,
+                                                                                  batch_outputs1,
+                                                                                  beta)
 
             with torch.no_grad():
                 loss += loss1 * len(batch_inputs0)
@@ -574,13 +577,10 @@ class DynamicsAE(nn.Module):
                 test_past_data0, test_past_data1, test_target_data0,
                 test_target_data1, test_indices, self.device)
 
-            loss1, reconstruction_error1, kl_loss1 = self.calculate_representation_loss(batch_inputs0,
-                                                                                     batch_inputs1,
-                                                                                     batch_outputs0,
-                                                                                     batch_outputs1,
-                                                                                     beta)
-
-            prior_loss1 = self.calculate_prior_loss(batch_inputs0, batch_inputs1)
+            loss1, reconstruction_error1, kl_loss1, prior_loss1 = self.calculate_loss(batch_inputs0, batch_inputs1,
+                                                                                      batch_outputs0,
+                                                                                      batch_outputs1,
+                                                                                      beta)
 
             with torch.no_grad():
                 loss += loss1 * len(batch_inputs0)

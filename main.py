@@ -20,11 +20,14 @@ import utils
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 default_device = torch.device("cpu")
 
+# For reproducibility
+torch.use_deterministic_algorithms(True)
+
 def main():
     # Settings
     # ------------------------------------------------------------------------------
     # By default, we save all the results in subdirectories of the following path.
-    base_path = "three_state_epoch50"
+    base_path = "Results"
 
     # If there is a configuration file, import the configuration file
     # Otherwise, an error will be reported
