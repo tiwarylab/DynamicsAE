@@ -1,7 +1,9 @@
 # DynamicsAE
-VAE: Imposing a Gaussian   |  Dynamics-AE: Imposing overdamped Langevin dynamics
-:-------------------------:|:-------------------------:
-![VAE](https://github.com/tiwarylab/DynamicsAE/blob/main/VAE_z_movie.gif?raw=true "VAE")|![Dynamics-AE](https://github.com/tiwarylab/DynamicsAE/blob/main/DynAE_z_movie.gif?raw=true "Dynamics-AE")
+Input|VAE: Imposing a Gaussian|Dynamics-AE: Imposing overdamped Langevin dynamics
+:-------------------------:|:-------------------------:|:-------------------------:
+<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/three_state_transformed.jpg?raw=true" width="300" height="300"/>|<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/3state_VAE_z_movie.gif?raw=true" width="300" height="300"/>|<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/3state_DynAE_z_movie.gif?raw=true" width="300" height="300"/>
+<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/dSprites_x_pos_y_pos.gif?raw=true" width="300" height="300"/>|<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/dSprites_2_VAE_z_movie.gif?raw=true" width="300" height="300"/>|<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/dSprites_2_DynAE_z_movie.gif?raw=true" width="300" height="300"/>
+<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/dSprites_scale_x_pos_y_pos.gif?raw=true" width="300" height="300"/>|<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/dSprites_3_VAE_z_scale_movie1.gif?raw=true" width="300" height="300"/>|<img src="https://github.com/tiwarylab/DynamicsAE/blob/main/files/dSprites_3_DynAE_z_scale_movie.gif?raw=true" width="300" height="300"/>
 
 DynamicsAE: A deep learning-based framework to uniquely identify an uncorrelated, isometric and meaningful latent representation.
 
