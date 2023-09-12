@@ -17,18 +17,18 @@ import utils
 # Model
 # --------------------
 
-class VAE(nn.Module):
+class SWAE(nn.Module):
 
-    def __init__(self, encoder_type, decoder_type, z_dim, output_shape, data_shape, device, neuron_num1=16,
+    def __init__(self, encoder_type, decoder_type, z_dim, output_shape, data_shape, projection_num, device, neuron_num1=16,
                  neuron_num2=16):
 
-        super(VAE, self).__init__()
+        super(SWAE, self).__init__()
         if encoder_type == 'fc_encoder':
             self.encoder_type = 'fc_encoder'
-            self.model_encoder = architectures.fc_encoder(2*z_dim, data_shape, device, neuron_num1)
+            self.model_encoder = architectures.fc_encoder(z_dim, data_shape, device, neuron_num1)
         elif encoder_type == 'conv_encoder':
             self.encoder_type = 'conv_encoder'
-            self.model_encoder = architectures.conv_encoder(2*z_dim, data_shape, device, neuron_num1)
+            self.model_encoder = architectures.conv_encoder(z_dim, data_shape, device, neuron_num1)
         else:
             raise NotImplementedError
 
@@ -49,13 +49,10 @@ class VAE(nn.Module):
 
         self.data_shape = data_shape
 
+        self.projection_num = projection_num
+
         self.eps = 1e-10
         self.device = device
-
-    def reparameterize(self, mu, logvar):
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(mu)
-        return eps * std + mu
 
     def encode(self, inputs):
         h = self.model_encoder.encoder_input_layer(inputs)
@@ -65,10 +62,7 @@ class VAE(nn.Module):
 
         output = self.model_encoder.encoder_output(enc)
 
-        z_mean = output[:, :self.z_dim]
-        z_logvar = output[:, self.z_dim:]
-
-        return z_mean, z_logvar
+        return output
 
     def decode(self, z):
         h = self.model_decoder.decoder_input_layer(z)
@@ -82,33 +76,33 @@ class VAE(nn.Module):
 
     def forward(self, data):
 
-        z_mean, z_logvar = self.encode(data)
+        z = self.encode(data)
 
-        z_sample = self.reparameterize(z_mean, z_logvar)
+        outputs = self.decode(z)
 
-        outputs = self.decode(z_sample)
-
-        return outputs, z_sample, z_mean, z_logvar
+        return outputs, z
 
     def calculate_loss(self, data_inputs, target_data, beta=1.0):
 
         # pass through VAE
-        varibles_list0 = self.forward(data_inputs)
+        outputs, z = self.forward(data_inputs)
 
-        outputs = varibles_list0[0]
+        # draw samples from prior distribution
+        # here is the Gaussian
+        # prior_samples = utils.rand_normal(z.shape[0], z.shape[1]).to(self.device)
+        # for the uniform distribution
+        prior_samples = utils.rand_uniform(z.shape[0], z.shape[1]).to(self.device)
 
-        z_mean = varibles_list0[2]
-        z_logvar = varibles_list0[3]
-
-        KL_loss = torch.mean(-0.5 * torch.sum(1 + z_logvar - z_mean ** 2 - z_logvar.exp(), dim=1), dim=0)
+        regularization_loss = utils.sliced_wasserstein_distance(z, prior_samples,
+                                                                self.projection_num, p=2, device=self.device)
 
         # MSE Reconstruction loss is used
         reconstruction_error = torch.sum(torch.square(target_data - outputs).flatten(start_dim=1), dim=1).mean()
 
         # loss = reconstruction_error + beta*entropy
-        loss = reconstruction_error + beta * KL_loss
+        loss = reconstruction_error + beta * regularization_loss
 
-        return loss, reconstruction_error.detach(), KL_loss.detach()
+        return loss, reconstruction_error.detach(), regularization_loss.detach()
 
     def train_model(self, beta, input_data_list, train_past_data, train_target_data, test_past_data, test_target_data,
               learning_rate, lr_scheduler_step_size, lr_scheduler_gamma,
@@ -119,7 +113,7 @@ class VAE(nn.Module):
         start = time.time()
         log_path = output_path + '_train.log'
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        model_path = output_path + "cpt" + str(index) + "/VAE"
+        model_path = output_path + "cpt" + str(index) + "/SWAE"
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
         epoch = 0
@@ -146,7 +140,7 @@ class VAE(nn.Module):
 
                 batch_inputs, batch_outputs = utils.sample_minibatch(train_past_data, train_target_data, train_indices, self.device)
 
-                loss, reconstruction_error, kl_loss = self.calculate_loss(batch_inputs, batch_outputs, beta)
+                loss, reconstruction_error, regularization_loss = self.calculate_loss(batch_inputs, batch_outputs, beta)
 
                 # Stop if NaN is obtained
                 if (torch.isnan(loss).any()):
@@ -161,29 +155,29 @@ class VAE(nn.Module):
                     train_time = time.time() - start
 
                     print(
-                        "Iteration %i:\tTime %f s\nLoss (train) %f\tKL loss (train): %f\n"
+                        "Iteration %i:\tTime %f s\nLoss (train) %f\tRegularization loss (train): %f\n"
                         "Reconstruction loss (train) %f" % (
-                            step, train_time, loss, kl_loss, reconstruction_error))
+                            step, train_time, loss, regularization_loss, reconstruction_error))
                     print(
-                        "Iteration %i:\tTime %f s\nLoss (train) %f\tKL loss (train): %f\n"
+                        "Iteration %i:\tTime %f s\nLoss (train) %f\tRegularization loss (train): %f\n"
                         "Reconstruction loss (train) %f" % (
-                            step, train_time, loss, kl_loss, reconstruction_error), file=open(log_path, 'a'))
+                            step, train_time, loss, regularization_loss, reconstruction_error), file=open(log_path, 'a'))
                     j = i % len(test_permutation)
 
                     test_indices = test_permutation[j:j + batch_size]
 
                     batch_inputs, batch_outputs = utils.sample_minibatch(test_past_data, test_target_data, test_indices, self.device)
 
-                    loss, reconstruction_error, kl_loss = self.calculate_loss(batch_inputs, batch_outputs, beta)
+                    loss, reconstruction_error, regularization_loss = self.calculate_loss(batch_inputs, batch_outputs, beta)
 
                     print(
-                        "Loss (test) %f\tKL loss (test): %f\n"
+                        "Loss (test) %f\tRegularization loss (test): %f\n"
                         "Reconstruction loss (test) %f" % (
-                            loss, kl_loss, reconstruction_error))
+                            loss, regularization_loss, reconstruction_error))
                     print(
-                        "Loss (test) %f\tKL loss (test): %f\n"
+                        "Loss (test) %f\tRegularization loss (test): %f\n"
                         "Reconstruction loss (test) %f" % (
-                            loss, kl_loss, reconstruction_error), file=open(log_path, 'a'))
+                            loss, regularization_loss, reconstruction_error), file=open(log_path, 'a'))
 
             epoch += 1
 
@@ -239,65 +233,65 @@ class VAE(nn.Module):
         final_result = []
         # output the result
 
-        loss, reconstruction_error, kl_loss = [0 for i in range(3)]
+        loss, reconstruction_error, regularization_loss = [0 for i in range(3)]
 
         for i in range(0, len(train_past_data), batch_size):
             train_indices = range(i, min(i + batch_size, len(train_past_data)))
 
             batch_inputs, batch_outputs = utils.sample_minibatch(train_past_data, train_target_data, train_indices, self.device)
-            loss1, reconstruction_error1, kl_loss1 = self.calculate_loss(batch_inputs, batch_outputs, beta)
+            loss1, reconstruction_error1, regularization_loss1 = self.calculate_loss(batch_inputs, batch_outputs, beta)
 
             with torch.no_grad():
                 loss += loss1 * len(batch_inputs)
                 reconstruction_error += reconstruction_error1 * len(batch_inputs)
-                kl_loss += kl_loss1 * len(batch_inputs)
+                regularization_loss += regularization_loss1 * len(batch_inputs)
 
         # output the result
         loss /= len(train_past_data)
         reconstruction_error /= len(train_past_data)
-        kl_loss /= len(train_past_data)
+        regularization_loss /= len(train_past_data)
 
-        final_result += [loss.data.cpu().numpy(), reconstruction_error.cpu().data.numpy(), kl_loss.cpu().data.numpy()]
+        final_result += [loss.data.cpu().numpy(), reconstruction_error.cpu().data.numpy(), regularization_loss.cpu().data.numpy()]
         print(
-            "Final: %d\nLoss (train) %f\tKL loss (train): %f\n"
+            "Final: %d\nLoss (train) %f\tRegularization loss (train): %f\n"
             "Reconstruction loss (train) %f" % (
-                index, loss, kl_loss, reconstruction_error))
+                index, loss, regularization_loss, reconstruction_error))
         print(
-            "Final: %d\nLoss (train) %f\tKL loss (train): %f\n"
+            "Final: %d\nLoss (train) %f\tRegularization loss (train): %f\n"
             "Reconstruction loss (train) %f" % (
-                index, loss, kl_loss, reconstruction_error),
+                index, loss, regularization_loss, reconstruction_error),
             file=open(path, 'a'))
 
-        loss, reconstruction_error, kl_loss = [0 for i in range(3)]
+        loss, reconstruction_error, regularization_loss = [0 for i in range(3)]
 
         for i in range(0, len(test_past_data), batch_size):
             test_indices = range(i, min(i + batch_size, len(test_past_data)))
 
             batch_inputs, batch_outputs = utils.sample_minibatch(test_past_data, test_target_data, test_indices, self.device)
 
-            loss1, reconstruction_error1, kl_loss1 = self.calculate_loss(batch_inputs, batch_outputs, beta)
+            loss1, reconstruction_error1, regularization_loss1 = self.calculate_loss(batch_inputs, batch_outputs, beta)
 
             with torch.no_grad():
                 loss += loss1 * len(batch_inputs)
                 reconstruction_error += reconstruction_error1 * len(batch_inputs)
-                kl_loss += kl_loss1 * len(batch_inputs)
+                regularization_loss += regularization_loss1 * len(batch_inputs)
 
         with torch.no_grad():
             # output the result
             loss /= len(test_past_data)
             reconstruction_error /= len(test_past_data)
-            kl_loss /= len(test_past_data)
+            regularization_loss /= len(test_past_data)
 
             final_result += [loss.cpu().data.numpy(), reconstruction_error.cpu().data.numpy(),
-                             kl_loss.cpu().data.numpy()]
+                             regularization_loss.cpu().data.numpy()]
             print(
-                "Loss (test) %f\tKL loss (train): %f\n"
+                "Loss (test) %f\tRegularization loss (train): %f\n"
                 "Reconstruction loss (test) %f"
-                % (loss, kl_loss, reconstruction_error))
+                % (loss, regularization_loss, reconstruction_error))
             print(
-                "Loss (test) %f\tKL loss (train): %f\n"
+                "Loss (test) %f\tRegularization loss (train): %f\n"
                 "Reconstruction loss (test) %f"
-                % (loss, kl_loss, reconstruction_error), file=open(path, 'a'))
+                % (loss, regularization_loss, reconstruction_error), file=open(path, 'a'))
 
             print("Beta: %f\t Learning_rate: %f" % (
                 beta, learning_rate))
@@ -312,32 +306,29 @@ class VAE(nn.Module):
     def save_traj_results(self, inputs, batch_size, path, SaveTrajResults, traj_index=0, index=1):
 
         all_prediction = []
-        all_z_sample = []
-        all_z_mean = []
+        all_z = []
 
         for i in range(0, len(inputs), batch_size):
             batch_inputs = inputs[i:i + batch_size].to(self.device)
 
             # pass through VAE
-            prediction, z_sample, z_mean, z_logvar = self.forward(batch_inputs)
+            prediction, z = self.forward(batch_inputs)
 
             all_prediction += [prediction.cpu()]
-            all_z_sample += [z_sample.cpu()]
-            all_z_mean += [z_mean.cpu()]
+            all_z += [z.cpu()]
 
         all_prediction = torch.cat(all_prediction, dim=0)
-        all_z_sample = torch.cat(all_z_sample, dim=0)
-        all_z_mean = torch.cat(all_z_mean, dim=0)
+        all_z = torch.cat(all_z, dim=0)
 
-        mean_representation_path = path + '_traj%d_mean_representation' % (traj_index) + str(index) + '.npy'
+        mean_representation_path = path + '_traj%d_representation' % (traj_index) + str(index) + '.npy'
 
         os.makedirs(os.path.dirname(mean_representation_path), exist_ok=True)
 
-        np.save(mean_representation_path, all_z_mean.cpu().data.numpy())
+        np.save(mean_representation_path, all_z.cpu().data.numpy())
 
         if SaveTrajResults:
             prediction_path = path + '_traj%d_data_prediction' % (traj_index) + str(index) + '.npy'
             representation_path = path + '_traj%d_representation' % (traj_index) + str(index) + '.npy'
 
             np.save(prediction_path, all_prediction.cpu().data.numpy())
-            np.save(representation_path, all_z_sample.cpu().data.numpy())
+            np.save(representation_path, all_z.cpu().data.numpy())

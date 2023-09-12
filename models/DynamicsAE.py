@@ -332,33 +332,31 @@ class DynamicsAE(nn.Module):
             if len(train_cluster_indices[k]) > train_dataset_size:
                 train_dataset_indices += [train_cluster_indices[k][
                                               torch.randperm(len(train_cluster_indices[k]))[
-                                              :train_dataset_size].to(
-                                                  self.device)]]
+                                              :train_dataset_size]]]
             elif len(train_cluster_indices[k]) > batch_size:
                 size = train_cluster_indices[k].shape[0] // batch_size * batch_size
                 for i in range((train_dataset_size) // train_cluster_indices[k].shape[0]):
                     train_dataset_indices += [
                         train_cluster_indices[k][
-                            torch.randperm(len(train_cluster_indices[k]))[:size].to(self.device)]]
+                            torch.randperm(len(train_cluster_indices[k]))[:size]]]
 
             if len(test_cluster_indices[k]) > test_dataset_size:
                 test_dataset_indices += [test_cluster_indices[k][
                                              torch.randperm(len(test_cluster_indices[k]))[
-                                             :test_dataset_size].to(
-                                                 self.device)]]
+                                             :test_dataset_size]]]
             elif len(test_cluster_indices[k]) > batch_size:
                 size = test_cluster_indices[k].shape[0] // batch_size * batch_size
                 for i in range(test_dataset_size // test_cluster_indices[k].shape[0]):
                     test_dataset_indices += [
-                        test_cluster_indices[k][torch.randperm(len(test_cluster_indices[k]))[:size].to(self.device)]]
+                        test_cluster_indices[k][torch.randperm(len(test_cluster_indices[k]))[:size]]]
 
         train_dataset_indices = torch.cat(train_dataset_indices, dim=0).reshape((-1, batch_size))
         test_dataset_indices = torch.cat(test_dataset_indices, dim=0).reshape((-1, batch_size))
 
         train_indices = train_dataset_indices[
-            torch.randperm((train_dataset_indices).shape[0]).to(self.device)].flatten()
+            torch.randperm((train_dataset_indices).shape[0])].flatten()
         test_indices = test_dataset_indices[
-            torch.randperm((test_dataset_indices).shape[0]).to(self.device)].flatten()
+            torch.randperm((test_dataset_indices).shape[0])].flatten()
 
         return train_indices, test_indices
 
@@ -405,8 +403,8 @@ class DynamicsAE(nn.Module):
                                                                 gamma=lr_scheduler_gamma)
                     
             else:
-                train_permutation = torch.randperm((train_past_data0).shape[0]).to(self.device)
-                test_permutation = torch.randperm((test_past_data0).shape[0]).to(self.device)
+                train_permutation = torch.randperm((train_past_data0).shape[0])
+                test_permutation = torch.randperm((test_past_data0).shape[0])
 
             for i in range(0, len(train_permutation), batch_size):
                 step += 1
@@ -515,13 +513,13 @@ class DynamicsAE(nn.Module):
 
     def output_final_result(self, train_past_data0, train_past_data1, train_target_data0, train_target_data1, \
                             test_past_data0, test_past_data1, test_target_data0, test_target_data1, \
-                            batch_size, output_path, log_path, beta,
+                            batch_size, output_path, path, beta,
                             learning_rate, index=0):
 
         final_result_path = output_path + '_final_result' + str(index) + '.npy'
         os.makedirs(os.path.dirname(final_result_path), exist_ok=True)
 
-        train_dataset_indices, test_dataset_indices = self.resampling(train_past_data0, test_past_data0, batch_size, True, output_path, log_path, index)
+        train_dataset_indices, test_dataset_indices = self.resampling(train_past_data0, test_past_data0, batch_size, True, output_path, path, index)
 
         # output the result
         final_result = []
@@ -563,7 +561,7 @@ class DynamicsAE(nn.Module):
             "Final: %d\nLoss (train) %f\tRegularization loss (train): %f\n"
             "Reconstruction loss (train) %f\t Prior loss (train) %f" % (
                 index, loss, kl_loss, reconstruction_error, prior_loss),
-            file=open(log_path, 'a'))
+            file=open(path, 'a'))
 
         loss, reconstruction_error, kl_loss, prior_loss = [0 for i in range(4)]
 
@@ -604,13 +602,13 @@ class DynamicsAE(nn.Module):
             print(
                 "Loss (test) %f\tRegularization loss (train): %f\n"
                 "Reconstruction loss (test) %f\t Prior loss (test) %f"
-                % (loss, kl_loss, reconstruction_error, prior_loss), file=open(log_path, 'a'))
+                % (loss, kl_loss, reconstruction_error, prior_loss), file=open(path, 'a'))
 
             print("Beta: %f\t Learning_rate: %f" % (
                 beta, learning_rate))
             print("Beta: %f\t Learning_rate: %f" % (
                 beta, learning_rate),
-                  file=open(log_path, 'a'))
+                  file=open(path, 'a'))
 
             final_result = np.array(final_result)
             np.save(final_result_path, final_result)

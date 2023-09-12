@@ -95,6 +95,32 @@ def sliced_wasserstein_distance(encoded_samples, prior_samples, projection_num=5
     return wasserstein_distance.mean()
 
 
+def rand_normal(batch_size, dim):
+    """ This function generates 2D samples from a uniform distribution in a 2-dimensional space
+
+        Args:
+            batch_size (int): number of batch samples
+            dim (int): dimension of the Gaussian
+
+        Return:
+            torch.Tensor: tensor of size (batch_size, dim)
+    """
+    z =  np.random.normal(size=(batch_size, dim))
+    return torch.from_numpy(z).type(torch.FloatTensor)
+
+def rand_uniform(batch_size, dim):
+    """ This function generates 2D samples from a uniform distribution in a 2-dimensional space
+
+        Args:
+            batch_size (int): number of batch samples
+            dim (int): dimension of the uniform distribution
+
+        Return:
+            torch.Tensor: tensor of size (batch_size, 2)
+    """
+    z = 2 * (np.random.uniform(size=(batch_size, dim)) - 0.5)
+    return torch.from_numpy(z).type(torch.FloatTensor)
+
 @torch.no_grad()
 def RegSpaceClustering(z_data, min_dist, max_centers=200, batch_size=128):
     '''

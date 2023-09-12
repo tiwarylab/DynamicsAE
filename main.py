@@ -15,13 +15,15 @@ import random
 
 from models.VAE import VAE
 from models.DynamicsAE import DynamicsAE
+from models.SDEVAE import SDEVAE
+from models.SWAE import SWAE
 import utils
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 default_device = torch.device("cpu")
 
 # For reproducibility
-torch.use_deterministic_algorithms(True)
+# torch.use_deterministic_algorithms(True)
 
 def main():
     # Settings
@@ -67,6 +69,12 @@ def main():
         if config.get("Model Parameters", "model") == 'DynamicsAE':
             model_type = 'DynamicsAE'
             model_path = os.path.join(base_path, "DynAE")
+        elif config.get("Model Parameters", "model") == 'SDEVAE':
+            model_type = 'SDEVAE'
+            model_path = os.path.join(base_path, "SDEVAE")
+        elif config.get("Model Parameters", "model") == 'SWAE':
+            model_type = 'SWAE'
+            model_path = os.path.join(base_path, "SWAE")
         else:
             model_type = 'VAE'
             model_path = os.path.join(base_path, "VAE")
@@ -86,6 +94,14 @@ def main():
                 prior_dynamics = 'Hamiltonian'
             else:
                 prior_dynamics = 'Langevin'
+
+        if model_type == 'SWAE':
+            # Number of projections to approximate sliced wasserstein distance
+            projection_num = int(config.get("Model Parameters", "projection_num"))
+
+        if model_type == 'SDEVAE':
+            # Number of projections to approximate sliced wasserstein distance
+            nu = float(config.get("Model Parameters", "nu"))
 
         # Training parameters
         batch_size = int(config.get("Training Parameters","batch_size"))
@@ -166,35 +182,42 @@ def main():
         print("Final Result", file=open(final_result_path, 'w'))
     
     det = 1
-    
-    for seed in seed_list:
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        random.seed(seed)
 
-        data_init_list = []
-        for i in range(len(input_data_list)):
-            data_init_list += [utils.data_init(t0, dt, input_data_list[i], target_data_list[i])]
+    for RC_dim in RC_dim_list:
+        for neuron_num1 in neuron_num1_list:
+            for neuron_num2 in neuron_num2_list:
+                for beta in beta_list:
+                    for learning_rate in learning_rate_list:
+                        for seed in seed_list:
+                            np.random.seed(seed)
+                            torch.manual_seed(seed)
+                            random.seed(seed)
 
-        data_shape = data_init_list[0][0]
+                            data_init_list = []
+                            for i in range(len(input_data_list)):
+                                data_init_list += [utils.data_init(t0, dt, input_data_list[i], target_data_list[i])]
 
-        train_past_data0 = torch.cat([data_init_list[i][1] for i in range(len(input_data_list))], dim=0)[::det]
-        train_past_data1 = torch.cat([data_init_list[i][2] for i in range(len(input_data_list))], dim=0)[::det]
-        train_target_data0 = torch.cat([data_init_list[i][3] for i in range(len(input_data_list))], dim=0)[::det]
-        train_target_data1 = torch.cat([data_init_list[i][4] for i in range(len(input_data_list))], dim=0)[::det]
+                            data_shape = data_init_list[0][0]
 
-        test_past_data0 = torch.cat([data_init_list[i][5] for i in range(len(input_data_list))], dim=0)[::det]
-        test_past_data1 = torch.cat([data_init_list[i][6] for i in range(len(input_data_list))], dim=0)[::det]
-        test_target_data0 = torch.cat([data_init_list[i][7] for i in range(len(input_data_list))], dim=0)[::det]
-        test_target_data1 = torch.cat([data_init_list[i][8] for i in range(len(input_data_list))], dim=0)[::det]
+                            train_past_data0 = torch.cat(
+                                [data_init_list[i][1] for i in range(len(input_data_list))], dim=0)[::det]
+                            train_past_data1 = torch.cat(
+                                [data_init_list[i][2] for i in range(len(input_data_list))], dim=0)[::det]
+                            train_target_data0 = torch.cat(
+                                [data_init_list[i][3] for i in range(len(input_data_list))], dim=0)[::det]
+                            train_target_data1 = torch.cat(
+                                [data_init_list[i][4] for i in range(len(input_data_list))], dim=0)[::det]
 
-        output_shape = train_target_data0.shape[1:]
+                            test_past_data0 = torch.cat([data_init_list[i][5] for i in range(len(input_data_list))],
+                                                        dim=0)[::det]
+                            test_past_data1 = torch.cat([data_init_list[i][6] for i in range(len(input_data_list))],
+                                                        dim=0)[::det]
+                            test_target_data0 = torch.cat(
+                                [data_init_list[i][7] for i in range(len(input_data_list))], dim=0)[::det]
+                            test_target_data1 = torch.cat(
+                                [data_init_list[i][8] for i in range(len(input_data_list))], dim=0)[::det]
 
-        for RC_dim in RC_dim_list:
-            for neuron_num1 in neuron_num1_list:
-                for neuron_num2 in neuron_num2_list:
-                    for beta in beta_list:
-                        for learning_rate in learning_rate_list:
+                            output_shape = train_target_data0.shape[1:]
 
                             if model_type == 'DynamicsAE':
                                 prior_learning_rate = learning_rate
@@ -209,15 +232,15 @@ def main():
                                 AE_model.train()
 
                                 train_result = AE_model.train_model(beta, input_data_list, train_past_data0,
-                                                                 train_past_data1, train_target_data0,
-                                                                 train_target_data1,
-                                                                 test_past_data0, test_past_data1, test_target_data0,
-                                                                 test_target_data1,
-                                                                 learning_rate, prior_learning_rate,
-                                                                 lr_scheduler_step_size, lr_scheduler_gamma,
-                                                                 batch_size, max_epochs,
-                                                                 output_path, log_interval,
-                                                                 SaveTrainingProgress, seed)
+                                                                    train_past_data1, train_target_data0,
+                                                                    train_target_data1,
+                                                                    test_past_data0, test_past_data1, test_target_data0,
+                                                                    test_target_data1,
+                                                                    learning_rate, prior_learning_rate,
+                                                                    lr_scheduler_step_size, lr_scheduler_gamma,
+                                                                    batch_size, max_epochs,
+                                                                    output_path, log_interval,
+                                                                    SaveTrainingProgress, seed)
 
                                 if train_result:
                                     return
@@ -227,6 +250,56 @@ def main():
                                                           test_past_data0, test_past_data1, test_target_data0, test_target_data1,
                                                           batch_size, output_path, final_result_path, beta,
                                                           learning_rate, seed)
+                                
+                            elif model_type == 'SDEVAE':
+                                output_path = model_path + "_d=%d_b=%f_lr=%f" \
+                                              % (RC_dim, beta, learning_rate)
+
+                                AE_model = SDEVAE(encoder_type, decoder_type, RC_dim, output_shape, data_shape, nu, device, neuron_num1, neuron_num2)
+
+                                AE_model.to(device)
+
+                                AE_model.train()
+
+                                train_result = AE_model.train_model(beta, input_data_list, train_past_data0,
+                                                                    train_past_data1, train_target_data0,
+                                                                    train_target_data1,
+                                                                    test_past_data0, test_past_data1, test_target_data0,
+                                                                    test_target_data1, learning_rate, lr_scheduler_step_size, lr_scheduler_gamma,
+                                                                    batch_size, max_epochs,
+                                                                    output_path, log_interval,
+                                                                    SaveTrainingProgress, seed)
+
+                                if train_result:
+                                    return
+
+                                AE_model.eval()
+                                AE_model.output_final_result(train_past_data0, train_past_data1, train_target_data0, train_target_data1,
+                                                          test_past_data0, test_past_data1, test_target_data0, test_target_data1,
+                                                          batch_size, output_path, final_result_path, beta,
+                                                          learning_rate, seed)
+                                
+                            elif model_type == 'SWAE':
+                                output_path = model_path + "_d=%d_b=%f_lr=%f" \
+                                              % (RC_dim, beta, learning_rate)
+
+                                AE_model = SWAE(encoder_type, decoder_type, RC_dim, output_shape, data_shape, projection_num, device, neuron_num1, neuron_num2)
+
+                                AE_model.to(device)
+
+                                train_result = AE_model.train_model(beta, input_data_list, train_past_data0,
+                                                                    train_target_data0,
+                                                                    test_past_data0, test_target_data0, learning_rate,
+                                                                    lr_scheduler_step_size, lr_scheduler_gamma,
+                                                                    max_epochs, batch_size, output_path, log_interval,
+                                                                    SaveTrainingProgress, seed)
+
+                                if train_result:
+                                    return
+
+                                AE_model.eval()
+                                AE_model.output_final_result(train_past_data0, train_target_data0, test_past_data0, test_target_data0,
+                                                             batch_size, output_path, final_result_path, beta, learning_rate, seed)
 
                             else:
                                 output_path = model_path + "_d=%d_b=%f_lr=%f" \
@@ -238,11 +311,11 @@ def main():
                                 AE_model.to(device)
 
                                 train_result = AE_model.train_model(beta, input_data_list, train_past_data0,
-                                                                 train_target_data0,
-                                                                 test_past_data0, test_target_data0, learning_rate,
-                                                                 lr_scheduler_step_size, lr_scheduler_gamma,
-                                                                 max_epochs, batch_size, output_path, log_interval,
-                                                                 SaveTrainingProgress, seed)
+                                                                    train_target_data0,
+                                                                    test_past_data0, test_target_data0, learning_rate,
+                                                                    lr_scheduler_step_size, lr_scheduler_gamma,
+                                                                    max_epochs, batch_size, output_path, log_interval,
+                                                                    SaveTrainingProgress, seed)
 
                                 if train_result:
                                     return
